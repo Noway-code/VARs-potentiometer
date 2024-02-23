@@ -10,10 +10,10 @@ float acceleration = 0;  // Variable to store acceleration
 
 int buttonPin = 2;   // Pin for the button
 bool calibrationMode = false;  // Flag to indicate calibration mode
-
 bool buttonState = false; // Current state of the button
 bool lastButtonState = false; // Previous state of the button
 int topFlag = 0; // Flag to indicate if the top of the joint range is reached
+bool exerciseMode = false; // Flag to indicate exercise mode
 
 void setup() {
   Serial.begin(9600); // Initialize serial communication
@@ -36,6 +36,7 @@ void loop() {
         Serial.println("Entering calibration mode...");
         calibLow = 1024; // Reset calibration low
         calibHigh = 0;   // Reset calibration high
+        exerciseMode = false; // Exit exercise mode if in it
       }
     }
     delay(50); // Delay for debouncing
@@ -43,54 +44,80 @@ void loop() {
   
   lastButtonState = buttonState; // Update the last button state
   
-  if (calibrationMode) {
-    // Calibration mode
-    repCount = 0;
-    calib = analogRead(potPin);
-
-    if (calib < calibLow) {
-      calibLow = calib;
+  if (Serial.available() > 0) {
+    String message = Serial.readStringUntil('\n');
+    if (message == "Exercise") {
+      // Enter exercise mode
+      Serial.println("Entering exercise mode...");
+      exerciseMode = true;
     }
-    if (calib > calibHigh) {
-      calibHigh = calib;
+  }
+
+  if (!exerciseMode) { // Only run the following if not in exercise mode
+    if (calibrationMode) {
+      // Calibration mode
+      repCount = 0;
+      calib = analogRead(potPin);
+
+      if (calib < calibLow) {
+        calibLow = calib;
+      }
+      if (calib > calibHigh) {
+        calibHigh = calib;
+      }
+
+      Serial.print("Calibrating... Current value: ");
+      Serial.print(calib);
+      Serial.print(" Min: ");
+      Serial.print(calibLow);
+      Serial.print(" Max: ");
+      Serial.println(calibHigh);
+      delay(250);
+    } else {
+      // Measurement mode
+      if (currentTime - prevTime >= 100) {  // Read potentiometer value every 100 milliseconds, step time
+        potVal1 = analogRead(potPin);  // Read the first potentiometer value
+        delay(50); // Delay for stability (optional)
+        potVal2 = analogRead(potPin);  // Read the second potentiometer value
+        
+        // Calculate acceleration (change in velocity / change in time)
+        float velocity1 = potVal1;
+        float velocity2 = potVal2;
+        acceleration = (velocity2 - velocity1) / ((currentTime - prevTime) / 1000.0); // Convert time to seconds
+        
+        prevTime = currentTime;  // Update previous time
+        Serial.print("Acceleration: ");
+        Serial.print(acceleration);
+
+        if(repCount >= 1 && (calibHigh - calibLow > 300)){
+          Serial.print(" Rep: ");
+          Serial.println(repCount);
+        }
+        else
+          Serial.println();
+
+        if(potVal1 >= 0.7*calibHigh && topFlag == 0){
+          topFlag = 1;
+        }
+        if(topFlag == 1 && (potVal1 <= 1.3*calibLow)){
+          topFlag = 0;
+          repCount++;
+        }
+      }
     }
-
-    Serial.print("Calibrating... Current value: ");
-    Serial.print(calib);
-    Serial.print(" Min: ");
-    Serial.print(calibLow);
-    Serial.print(" Max: ");
-    Serial.println(calibHigh);
-    delay(250);
-  } else {
-    // Measurement mode
-    if (currentTime - prevTime >= 100) {  // Read potentiometer value every 100 milliseconds, step time
-      potVal1 = analogRead(potPin);  // Read the first potentiometer value
-      delay(50); // Delay for stability (optional)
-      potVal2 = analogRead(potPin);  // Read the second potentiometer value
-      
-      // Calculate acceleration (change in velocity / change in time)
-      float velocity1 = potVal1;
-      float velocity2 = potVal2;
-      acceleration = (velocity2 - velocity1) / ((currentTime - prevTime) / 1000.0); // Convert time to seconds
-      
-      prevTime = currentTime;  // Update previous time
-      Serial.print("Acceleration: ");
-      Serial.print(acceleration);
-
-      if(repCount >= 1 && (calibHigh - calibLow > 300)){
-        Serial.print(" Rep: ");
-        Serial.println(repCount);
-      }
-      else
-        Serial.println();
-
-      if(potVal1 >= 0.8*calibHigh && topFlag == 0){
-        topFlag = 1;
-      }
-      if(topFlag == 1 && (potVal1 <= 1.2*calibLow)){
-        topFlag = 0;
-        repCount++;
+  }
+  else {
+    // In exercise mode, pause other activities
+    // You can add your specific code for exercise mode here
+    // For example, you could display a message indicating exercise mode is active
+    Serial.println("Exercise mode active. Press 'Exercise' again to exit.");
+    delay(1000); // Add a delay to avoid rapid toggling
+    if (Serial.available() > 0) {
+      String message = Serial.readStringUntil('\n');
+      if (message == "Exercise") {
+        // Enter exercise mode
+        Serial.println("Entering exercise mode...");
+        exerciseMode = false;
       }
     }
   }
